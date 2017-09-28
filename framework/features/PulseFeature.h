@@ -2,8 +2,9 @@
 #define PULSEFEATURE_H
 
 #include "Feature.h"
+#include "../util/Damper.h"
 
-template<const char* const name, uint16_t gpio, bool invert = false, uint16_t damper = 0, uint16_t max_duration = 0>
+template<const char* const name, uint16_t gpio, bool invert = false, uint16_t damper_time = 0, uint16_t max_duration = 0>
 class PulseFeature : public Feature<name> {
 
 protected:
@@ -12,7 +13,7 @@ protected:
 public:
     PulseFeature(Device* device) :
             Feature<name>(device),
-            lastChange(RTC.getRtcSeconds()) {
+            damper() {
         pinMode(gpio, OUTPUT);
         digitalWrite(gpio, invert);
         this->timeoutTimer.initializeMs(100, TimerDelegate(&PulseFeature::onTimeout, this));
@@ -30,14 +31,10 @@ protected:
 
 private:
     void onMessageReceived(const String& topic, const String& message) {
-        const uint32_t now = RTC.getRtcSeconds();
-
-        if (damper > 0) {
-            if (this->lastChange + damper > now) {
-                LOG.log("message ignored because still in damping");
-                return;
-            }
+        if(damper.isDamped()) {
+            return;
         }
+
         const int value = message.toInt();
         if (value <= 0) {
             LOG.log("Message parsed as 0 :", message);
@@ -47,15 +44,14 @@ private:
             this->publish("triggered", String(value), false);
             doPulse(value);
         }
-        this->lastChange = now;
     }
 
     void onTimeout() {
         digitalWrite(gpio, invert);
     }
 
-    uint32_t lastChange;
     Timer timeoutTimer;
+    Damper<damper_time> damper;
 };
 
 #endif
